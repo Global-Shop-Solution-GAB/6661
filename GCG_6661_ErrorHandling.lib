@@ -1,0 +1,95 @@
+Program.Sub.Preflight.Start
+F.Data.DataTable.Create("dtCon",True)
+F.Data.DataTable.AddColumn("dtCon","Name","String")
+F.Data.DataTable.AddColumn("dtCon","Status","Boolean",False)
+F.Data.DataView.Create("dtCon","dvCon")
+Program.Sub.Preflight.End
+
+Program.Sub.ErrorMessage.Start
+'Arguments: ScriptFile, CurrentSubroutine
+V.Local.sError.Declare
+F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Args.ScriptFile,V.Ambient.Newline,V.Args.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+F.Intrinsic.UI.Msgbox(V.Local.sError)
+Program.Sub.ErrorMessage.End
+
+Program.Sub.ErrorLog.Start
+'Arguments: ScriptFile, CurrentSubroutine, FolderName
+V.Local.sError.Declare
+V.Local.sFile.Declare
+V.Local.sFileString.Declare
+V.Local.bExists.Declare
+F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Args.ScriptFile,V.Ambient.Newline,V.Args.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+F.Intrinsic.String.Build("{0}\CUSTOM\{1}\{2}\",V.Caller.GlobalDir,V.Args.FolderName,V.Caller.CompanyCode,V.Local.sFile)
+F.Intrinsic.File.CreateDir(V.Local.sFile)
+F.Intrinsic.String.Build("{0}ERR_LOG_{1}.log",V.Local.sFile,V.Ambient.Date.FormatYYYYMMDD,V.Local.sFile)
+F.Intrinsic.File.Exists(V.Local.sFile,V.Local.bExists)
+F.Intrinsic.Control.If(V.Local.bExists)
+	F.Intrinsic.File.File2String(V.Local.sFile,V.Local.sFileString)
+	F.Intrinsic.String.Build("{0}{1}{1}",V.Local.sFileString,V.Ambient.NewLine,V.Local.sFileString)
+F.Intrinsic.Control.EndIf
+F.Intrinsic.String.Build("{0}Logged: {1}{2}{3}",V.Local.sFileString,V.Ambient.Time.FormatHH:NN:SS,V.Ambient.NewLine,V.Local.sError,V.Local.sFileString)
+F.Intrinsic.File.String2File(V.Local.sFile,V.Local.sFileString)
+Program.Sub.ErrorLog.End
+
+Program.Sub.ErrorMobile.Start
+'Arguments: ScriptFile, CurrentSubroutine, TransID, FolderName
+V.Local.sErrorDescr.Declare
+F.Intrinsic.Control.If(V.Args.TransID,=,-1)
+	F.Intrinsic.Control.CallSub(ErrorLog,"ScriptFile",V.Args.ScriptFile,"CurrentSubroutine",V.Args.CurrentSubroutine,"FolderName",V.Args.FolderName)
+F.Intrinsic.Control.Else
+	F.Intrinsic.String.Build("<font color={6}red{6}><b>Project: {0}{1}<br>{1}<br>Subroutine: {2}{1}<br>Error Occurred {3} with description {4}{1}<br>{1}<br>GAB Version: {5}</b><br>Please take a picture of this error for troubleshooting.</font>",V.Args.ScriptFile,V.Ambient.Newline,V.Args.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Ambient.DblQuote,V.Local.sErrorDescr)
+	F.Global.Mobile.SetCustomResult(V.Caller.CompanyCode,V.Args.TransID,V.Local.sErrorDescr)
+F.Intrinsic.Control.EndIf
+Program.Sub.ErrorMobile.End
+
+Program.Sub.OpenConnection.Start
+'Arguments: Connection, CompanyCommon
+V.Local.sFilter.Declare
+F.Intrinsic.String.Build("[Name] = '{0}'",V.Args.Connection.UCase,V.Local.sFilter)
+F.Data.DataView.SetFilter("dtCon","dvCon",V.Local.sFilter)
+F.Intrinsic.Control.If(V.DataView.dtCon!dvCon.RowCount,=,0)
+	'Connection not registered in History, add it
+	F.Data.DataTable.AddRow("dtCon","Name",V.Args.Connection.UCase)
+F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.If(V.DataView.dtCon!dvCon(0).Status!FieldValNot)
+	'Connection is not open, open it and flip its status
+	F.Data.DataView.SetValue("dtCon","dvCon",0,"Status",V.DataView.dtCon!dvCon(0).Status!FieldValNot)
+	F.Intrinsic.Control.If(V.Args.CompanyCommon)
+		F.ODBC.Connection![V.Args.Connection.UCase].OpenCompanyConnection
+	F.Intrinsic.Control.Else
+		F.ODBC.Connection![V.Args.Connection.UCase].OpenCommonConnection
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndIf
+Program.Sub.OpenConnection.End
+
+Program.Sub.CloseConnection.Start
+'Arguments: Connection
+V.Local.sFilter.Declare
+F.Intrinsic.String.Build("[Name] = '{0}'",V.Args.Connection.UCase,V.Local.sFilter)
+F.Data.DataView.SetFilter("dtCon","dvCon",V.Local.sFilter)
+F.Intrinsic.Control.If(V.DataView.dtCon!dvCon.RowCount,>,0)
+	F.Intrinsic.Control.If(V.DataView.dtCon!dvCon(0).Status!FieldVal)
+		'Connection is open, close it and flip its status
+		F.Data.DataView.SetValue("dtCon","dvCon",0,"Status",V.DataView.dtCon!dvCon(0).Status!FieldValNot)
+		F.ODBC.Connection![V.Args.Connection.UCase].Close
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndIf
+Program.Sub.CloseConnection.End
+
+Program.Sub.CloseAllConnections.Start
+V.Local.iCnt.Declare
+V.Local.sCon.Declare
+F.Data.DataView.SetFilter("dtCon","dvCon","[Status] = True")
+F.Intrinsic.Control.If(V.DataView.dtCon!dvCon.RowCount,>,0)
+	F.Intrinsic.Control.For(V.Local.iCnt,0,V.DataView.dtCon!dvCon.RowCount--,1)
+		V.Local.sCon.Set(V.DataView.dtCon!dvCon(V.Local.iCnt).Name!FieldVal)
+		F.ODBC.Connection![V.Local.sCon].Close
+	F.Intrinsic.Control.Next(V.Local.iCnt)
+	F.Data.DataView.SetValue("dtCon","dvCon",-1,"Status",False)
+F.Intrinsic.Control.EndIf
+Program.Sub.CloseAllConnections.End
+
+Program.Sub.Comments.Start
+${$5$}$3.0.0.0$}$0
+${$6$}$bbaker$}$20200319091743923$}$pM7xsHplA2E9VCTenDTJ47gi1rF/t66WjoUfLL22f6Lo6fyM3rCyFamzJGK8LKPmteW8ozez7aw=
+Program.Sub.Comments.End
