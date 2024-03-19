@@ -1,0 +1,250 @@
+﻿Program.Sub.Preflight.Start
+Program.External.Include.Library("GCG_6661_ErrorHandling.lib")
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'Author - BixRB
+'Gives user ability to select a project for Customer Master and update all open Sales Orders' Project 
+Function.Intrinsic.UI.UsePixels ' Allows you to use Pixels instead of Twips throughout
+V.Local.sProj.Declare
+V.Local.sMsg.Declare
+V.Local.iRet.Declare
+F.Intrinsic.Control.Try
+
+'hooks
+F.Intrinsic.Control.SelectCase(V.Caller.Hook)
+	F.Intrinsic.Control.Case(11560)
+		'Sales Order Populate Hook
+		'000006 - Customer
+		'000158 - Project
+		F.Intrinsic.Control.If(V.Caller.Switches,<>,"N",or,V.Passed.000006,=,"")
+			'Don't want to execute this code unless it's a new sales order
+			F.Intrinsic.Control.End
+		F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.CallSub(GetProject,"Cust",V.Passed.000006,"SO","")
+		'V.Args.ProjRet
+		F.Intrinsic.Control.If(V.Args.ProjRet,<>,"***NO RETURN***")
+			V.Passed.000158.Set(V.Args.ProjRet)
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.Case(14350)
+		'Customer master populate hook
+		'Get existing Project for Customer
+		'000002 - Customer
+		F.Intrinsic.Control.CallSub(GetProject,"Cust",V.Passed.000002,"SO","")
+		'Format Custom controls
+		F.Intrinsic.Control.If(V.Args.ProjRet,<>,"***NO RETURN***",and,V.Args.ProjRet,<>,"***ERR***")
+			V.Passed.GAB-TEXT-1.Set(V.Args.ProjRet)
+		F.Intrinsic.Control.Else
+			V.Passed.GAB-TEXT-1.Set("")
+		F.Intrinsic.Control.EndIf
+		V.Passed.GAB-LBL-1.Set("Project")
+		V.Passed.GAB-BTN-1.Set("Brw")
+		F.Intrinsic.Variable.SetProperty("GAB-TEXT-1","PL",330)
+		F.Intrinsic.Variable.SetProperty("GAB-TEXT-1","PT",533)
+		F.Intrinsic.Variable.SetProperty("GAB-TEXT-1","PW",700)
+'		F.Intrinsic.Variable.SetProperty("GAB-TEXT-1","PA","T")
+		F.Intrinsic.UI.ChangeCallerProperty(V.Passed.GAB-TEXT-1,"HIDE",0)
+		F.Intrinsic.Control.If(V.Caller.Switches,=,"N",or,V.Caller.Switches,=,"O")
+			F.Intrinsic.UI.ChangeCallerProperty(V.Passed.GAB-TEXT-1,"LOCK",0)
+		F.Intrinsic.Control.EndIf
+		'Need to short CRM User Grp label to fit custom label
+		F.Intrinsic.Variable.SetProperty("000158","PW",130)
+		F.Intrinsic.Variable.SetProperty("GAB-LBL-1","PL",330)
+		F.Intrinsic.Variable.SetProperty("GAB-LBL-1","PT",517)
+		F.Intrinsic.Variable.SetProperty("GAB-LBL-1","PW",50)
+		F.Intrinsic.Variable.SetProperty("GAB-LBL-1","PA","T")
+		F.Intrinsic.UI.ChangeCallerProperty(V.Passed.GAB-LBL-1,"HIDE",0)
+		F.Intrinsic.Control.If(V.Caller.Switches,=,"N",or,V.Caller.Switches,=,"O")
+			F.Intrinsic.Variable.SetProperty("GAB-BTN-1","PL",403)
+			F.Intrinsic.Variable.SetProperty("GAB-BTN-1","PT",530)
+			F.Intrinsic.Variable.SetProperty("GAB-BTN-1","PW",25)
+			F.Intrinsic.Variable.SetProperty("GAB-BTN-1","PA","T")
+			F.Intrinsic.UI.ChangeCallerProperty(V.Passed.GAB-BTN-1,"HIDE",0)
+			F.Intrinsic.UI.ChangeCallerProperty(V.Passed.GAB-BTN-1,"LOCK",0)
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.Case(14369)
+		'Customer master Custom Button 1
+		'Browse Projects
+		F.Intrinsic.Control.CallSub(BrowseProjects)
+		F.Intrinsic.Control.If(V.Args.BrwProjRet.IsNotCancel)
+			V.Passed.GAB-TEXT-1.Set(V.Args.BrwProjRet)
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.Case(14384)
+		'Customer master pre-save hook
+		'000002 - Customer
+		F.Intrinsic.Control.If(V.Passed.777777,=,1)
+			F.Intrinsic.Control.End
+		F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.CallSub(CheckProject,"Project",V.Passed.GAB-TEXT-1.Trim,"Cust",V.Passed.000002,"SO","")
+		F.Intrinsic.Control.If(V.Args.ChkRet.Not)
+			'Project is not a valid project, reset it to old value and cancel save
+			F.Intrinsic.Control.If(V.Args.ChkProj,<>,"***NO RETURN***",and,V.Args.ChkProj,<>,"***ERR***")
+				V.Passed.GAB-TEXT-1.Set(V.Args.ChkProj)
+			F.Intrinsic.Control.Else
+				V.Passed.GAB-TEXT-1.Set("")
+			F.Intrinsic.Control.EndIf
+			V.Passed.777777.Set(1)
+			F.Intrinsic.Control.End
+		F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.If(V.Args.ChkProj,=,"***NO RETURN***",or,V.Args.ChkProj,=,"***ERR***")
+			V.Local.sProj.Set("")
+		F.Intrinsic.Control.Else
+			V.Local.sProj.Set(V.Args.ChkProj)
+		F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.If(V.Local.sProj,<>,V.Passed.GAB-TEXT-1.Trim)
+			'Project was changed, ask user if they want to commit to SO's
+			F.Intrinsic.String.Build("Project was changed, would you like to push this change to all open sales orders for this customer?{0}{0}Old: {1}{0}New: {2}",V.Ambient.NewLine,V.Local.sProj,V.Passed.GAB-TEXT-1,V.Local.sMsg)
+			F.Intrinsic.UI.Msgbox(V.Local.sMsg,"SAVING",V.Enum.MsgBoxStyle!YesNoCancel,V.Local.iRet)
+			F.Intrinsic.Control.If(V.Local.iRet,=,V.Enum.MsgBoxResult!Yes)
+				'Push to Global Variable
+				V.Passed.GLOBAL.Set("PUSH PROJECT")
+			F.Intrinsic.Control.ElseIf(V.Local.iRet,=,V.Enum.MsgBoxResult!Cancel)
+				'Cancel save
+				V.Passed.777777.Set(1)
+			F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.Case(14385)
+		'Customer master post-save hook
+		'Save Project to DB
+		'000002 - Customer
+		F.Intrinsic.Control.CallSub(SaveProject,"Cust",V.Passed.000002,"Project",V.Passed.GAB-TEXT-1.Trim)
+		'Push project to SOs if selected
+		F.Intrinsic.Control.If(V.Passed.GLOBAL,=,"PUSH PROJECT")
+			'Push to SOs
+			F.Intrinsic.Control.CallSub(UpdateSOProjects,"Cust",V.Passed.000002,"Project",V.Passed.GAB-TEXT-1)
+			V.Passed.GLOBAL.Set("This variable will retain its value through out the thread")
+		F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndSelect
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(ErrorMessage,"ScriptFile",V.Caller.ScriptFile,"CurrentSubroutine",V.Ambient.CurrentSubroutine)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.GetProject.Start
+'V.Args.Cust, V.Args.SO
+V.Local.sSQL.Declare
+F.Intrinsic.Control.Try
+
+F.Intrinsic.Control.If(V.Args.SO,=,"")
+	'Passed in no SO
+	F.Intrinsic.Control.If(V.Args.Cust,=,"")
+		'No customer either
+		F.Intrinsic.Variable.AddRV("ProjRet","***ERR***")
+	F.Intrinsic.Control.Else
+		'Check customer project
+		F.Intrinsic.String.Build("select rtrim(PROJECT) from GCG_6661_CUSTPROJ where CUSTOMER = '{0}';",V.Args.Cust,V.Local.sSQL)
+		F.ODBC.Connection!conPROJ.OpenCompanyConnection
+		F.ODBC.Connection!conPROJ.ExecuteAndReturn(V.Local.sSQL,V.Local.sSQL)
+		F.ODBC.Connection!conPROJ.Close
+		F.Intrinsic.Control.If(V.Ambient.ExecuteAndReturnEOF.Not,=,True,and,V.Local.sSQL,<>,"")
+			F.Intrinsic.Variable.AddRV("ProjRet",V.Local.sSQL)
+		F.Intrinsic.Control.Else
+			F.Intrinsic.Variable.AddRV("ProjRet","***NO RETURN***")
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.Else
+	'Use SO
+	F.Intrinsic.String.Build("select rtrim(PROJECT) from V_ORDER_HEADER where ORDER_NO = '{0}';",V.Args.SO,V.Local.sSQL)
+	F.ODBC.Connection!conPROJ.OpenCompanyConnection
+	F.ODBC.Connection!conPROJ.ExecuteAndReturn(V.Local.sSQL,V.Local.sSQL)
+	F.ODBC.Connection!conPROJ.Close
+	F.Intrinsic.Control.If(V.Ambient.ExecuteAndReturnEOF.Not,=,True,and,V.Local.sSQL,<>,"")
+		F.Intrinsic.Variable.AddRV("ProjRet",V.Local.sSQL)
+	F.Intrinsic.Control.Else
+		F.Intrinsic.Variable.AddRV("ProjRet","***NO RETURN***")
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(ErrorMessage,"ScriptFile",V.Caller.ScriptFile,"CurrentSubroutine",V.Ambient.CurrentSubroutine)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.GetProject.End
+
+Program.Sub.BrowseProjects.Start
+V.Local.sRet.Declare
+F.Intrinsic.Control.Try
+
+F.Intrinsic.UI.Browser(2000,"",V.Local.sRet)
+
+F.Intrinsic.Control.If(V.Local.sRet.IsNotCancel)
+	F.Intrinsic.String.Split(V.Local.sRet,"*!*",V.Local.sRet)
+	F.Intrinsic.Variable.AddRV("BrwProjRet",V.Local.sRet(0))
+F.Intrinsic.Control.Else
+	F.Intrinsic.Variable.AddRV("BrwProjRet",V.Local.sRet)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(ErrorMessage,"ScriptFile",V.Caller.ScriptFile,"CurrentSubroutine",V.Ambient.CurrentSubroutine)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.BrowseProjects.End
+
+Program.Sub.CheckProject.Start
+'V.Args.Project, V.Args.Cust, V.Args.SO
+V.Local.sSQL.Declare
+F.Intrinsic.Control.Try
+
+F.Intrinsic.String.Build("select 1 from V_PROJECT_MASTER where PROJECT = '{0}';",V.Args.Project,V.Local.sSQL)
+F.ODBC.Connection!conPROJCHK.OpenCompanyConnection
+F.ODBC.Connection!conPROJCHK.ExecuteAndReturn(V.Local.sSQL,V.Local.sSQL)
+F.ODBC.Connection!conPROJCHK.Close
+F.Intrinsic.Control.If(V.Ambient.ExecuteAndReturnEOF,=,True,and,V.Args.Project,<>,"")
+	'No Project
+	F.Intrinsic.String.Build("The entered project ({0}) could not be found.{1}{1}Cancelling save and reverting change.",V.Args.Project,V.Ambient.NewLine,V.Local.sSQL)
+	F.Intrinsic.UI.Msgbox(V.Local.sSQL,"CANCELLING CHANGE")
+	F.Intrinsic.Variable.AddRV("ChkRet",False)
+F.Intrinsic.Control.Else
+	F.Intrinsic.Variable.AddRV("ChkRet",True)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.CallSub(GetProject,"Cust",V.Args.Cust,"SO",V.Args.SO)
+F.Intrinsic.Variable.AddRV("ChkProj",V.Args.ProjRet)
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(ErrorMessage,"ScriptFile",V.Caller.ScriptFile,"CurrentSubroutine",V.Ambient.CurrentSubroutine)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.CheckProject.End
+
+Program.Sub.SaveProject.Start
+'V.Args.Cust, V.Args.Project
+F.Intrinsic.Control.Try
+
+F.Data.DataTable.Create("dtSave",False)
+F.Data.DataTable.AddColumn("dtSave","CUSTOMER","String")
+F.Data.DataTable.AddColumn("dtSave","PROJECT","String")
+F.Data.DataTable.AddRow("dtSave","CUSTOMER",V.Args.Cust,"PROJECT",V.Args.Project)
+F.ODBC.Connection!conPROJSAVE.OpenCompanyConnection
+F.Data.DataTable.SaveToDB("dtSave","conPROJSAVE","GCG_6661_CUSTPROJ","CUSTOMER",256)
+F.ODBC.Connection!conPROJSAVE.Close
+F.Data.DataTable.Close("dtSave")
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(ErrorMessage,"ScriptFile",V.Caller.ScriptFile,"CurrentSubroutine",V.Ambient.CurrentSubroutine)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.SaveProject.End
+
+Program.Sub.UpdateSOProjects.Start
+'V.Args.Cust, V.Args.Project
+V.Local.sSQL.Declare
+F.Intrinsic.Control.Try
+
+F.Intrinsic.String.Build("update ORDER_HEADER set PROJECT = '{0}' where CUSTOMER = '{1}' and RECORD_TYPE = 'A';",V.Args.Project,V.Args.Cust,V.Local.sSQL)
+F.ODBC.Connection!conSOSAVE.OpenCompanyConnection
+F.ODBC.Connection!conSOSAVE.Execute(V.Local.sSQL)
+F.ODBC.Connection!conSOSAVE.Close
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(ErrorMessage,"ScriptFile",V.Caller.ScriptFile,"CurrentSubroutine",V.Ambient.CurrentSubroutine)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.UpdateSOProjects.End
+
+Program.Sub.Comments.Start
+${$5$}$3.0.0.0$}$1
+${$6$}$bbaker$}$20220317104520155$}$pM7xsHplA2E9VCTenDTJ47gi1rF/t66WeROF2jv3rV+ssVv26l4klAHC6/1rE2T6i9SORyuDUno=
+Program.Sub.Comments.End
